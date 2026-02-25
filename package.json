@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "dev": "tsx --watch src/server.ts",
+    "mcp:stdio": "tsx src/mcp-stdio.ts",
+    "mcp:inspect": "npx @modelcontextprotocol/inspector npx tsx src/mcp-stdio.ts",
     "generate-card": "tsx scripts/generate-agent-card.ts",
     "upload-card": "tsx scripts/generate-agent-card.ts --upload",
     "register-agent": "tsx scripts/generate-agent-card.ts --register",
@@ -15,9 +17,18 @@
     "boost-reputation": "tsx scripts/boost-reputation.ts",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["x402", "web-scraper", "agent", "api", "micropayments", "base"],
+  "keywords": [
+    "x402",
+    "web-scraper",
+    "agent",
+    "api",
+    "micropayments",
+    "base",
+    "mcp"
+  ],
   "license": "Apache-2.0",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
     "@x402/core": "^2.3.0",
     "@x402/evm": "^2.3.0",
     "@x402/express": "^2.3.0",
@@ -25,7 +36,8 @@
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
-    "viem": "^2.0.0"
+    "viem": "^2.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

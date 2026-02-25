@@ -38,6 +38,7 @@ npm run build && npm start
 |--------|------|------|-------------|
 | `GET` | `/health` | None | Health check |
 | `POST` | `/scrape` | x402 (after free tier) | Scrape a URL; returns metadata, optional markdown/HTML |
+| `POST/GET/DELETE` | `/mcp` | None | MCP server (Streamable HTTP) |
 | `GET` | `/.well-known/agent.json` | None | OASF agent card |
 
 ### POST /scrape
@@ -51,6 +52,33 @@ npm run build && npm start
 | `html` | boolean | No | Include raw HTML |
 
 **Response:** JSON with `url`, `status`, `metadata` (e.g. `title`, `description`, `word_count`), and optionally `markdown` and `html` when requested.
+
+### MCP Server
+
+The same scraping functionality is available as an MCP tool via the [Model Context Protocol](https://modelcontextprotocol.io). Clients like Cursor, Claude Desktop, or any MCP-compatible agent can connect directly.
+
+**Transport:** Streamable HTTP at `/mcp`
+
+**Tool: `scrape`**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | Yes | URL to scrape |
+| `markdown` | boolean | No (default: true) | Include markdown of page content |
+| `html` | boolean | No (default: false) | Include raw HTML |
+
+**Client configuration (e.g. Cursor, Claude Desktop):**
+
+```json
+{
+  "mcpServers": {
+    "web-scraper": {
+      "type": "streamable-http",
+      "url": "https://web-scraper.fourotwo.xyz/mcp"
+    }
+  }
+}
+```
 
 ## x402 Payment Flow
 
@@ -97,6 +125,7 @@ docker run --platform linux/amd64 -p 8080:8080 --env-file .env web-scraper
 
 ### Runtime
 
+- **@modelcontextprotocol/sdk** — MCP server (Streamable HTTP transport)
 - **@x402/express**, **@x402/core**, **@x402/evm** — x402 payment protocol
 - **@x402/paywall** — Browser paywall UI with wallet connection
 - **express** — HTTP server

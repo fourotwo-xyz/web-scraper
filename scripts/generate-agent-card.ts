@@ -92,7 +92,7 @@ const agentCard = {
 
   capabilities: ["web-scraping", "data-analysis", "automated-reporting"],
 
-  protocols: ["x402", "oasf/1.0"],
+  protocols: ["x402", "oasf/1.0", "mcp"],
   authSchemes: ["x402"],
   defaultInputModes: ["application/json"],
   defaultOutputModes: ["application/json"],
@@ -208,6 +208,22 @@ const agentCard = {
     },
   ],
 
+  services: [
+    {
+      name: "web",
+      endpoint: getBaseUrl(),
+      description: "REST API — POST /scrape with x402 payment",
+    },
+    {
+      name: "MCP",
+      endpoint: `${getBaseUrl()}/mcp`,
+      version: "2025-03-26",
+      description: "Model Context Protocol server for LLM integration (Streamable HTTP)",
+      capabilities: ["tools"],
+      tools: ["scrape", "get_metadata", "get_markdown", "get_html", "evaluate_javascript"],
+    },
+  ],
+
   dataSources: [],
 
   benchmarks: {
@@ -237,7 +253,7 @@ const agentCard = {
   // }),
   attributes: {
     blockchain: { chain: "base", chainId: 8453 },
-    protocols: ["x402"],
+    protocols: ["x402", "mcp"],
     tags: [
       "web-scraping",
       "content-extraction",
@@ -245,6 +261,7 @@ const agentCard = {
       "html",
       "base",
       "x402",
+      "mcp",
       "agent-api",
     ],
   },

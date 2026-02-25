@@ -16,6 +16,7 @@ import { evmPaywall } from "@x402/paywall/evm";
 
 import { freemiumGate } from "./middleware/freemium.js";
 import { extractUrl } from "./services/simplescraper.js";
+import { mountMcp } from "./mcp.js";
 
 const PORT = process.env.PORT || 8080;
 const RECEIVER = process.env.PAYMENT_RECEIVER_ADDRESS || "0xYourWalletAddressHere";
@@ -169,6 +170,7 @@ app.get("/", (_req, res) => {
     },
     links: {
       health: "GET /health",
+      mcp: "POST /mcp (Streamable HTTP)",
       agentCard: "GET /.well-known/agent.json",
     },
   });
@@ -196,6 +198,7 @@ app.get("/.well-known/agent.json", (_req, res) => {
       streaming: false,
       pushNotifications: false,
       stateTransitionHistory: false,
+      mcp: true,
     },
     endpoints: [
       {
@@ -218,15 +221,24 @@ app.get("/.well-known/agent.json", (_req, res) => {
         },
       },
     ],
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "/mcp",
+    },
     contact: { type: "url", value: "https://www.fourotwo.xyz" },
   });
 });
+
+// ── MCP Server (Streamable HTTP at /mcp) ─────────────────────────────────
+
+mountMcp(app);
 
 // ── Start ───────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`\n  Web-Scraper listening on http://localhost:${PORT}`);
   console.log(`  POST /scrape — 402: $0.03 USDC → ${RECEIVER}`);
+  console.log(`  POST /mcp    — MCP Streamable HTTP`);
   console.log(`  Network: ${X402_NETWORK}  Facilitator: ${FACILITATOR_URL}`);
   console.log(`  Free tier: 2 calls per wallet\n`);
 });
