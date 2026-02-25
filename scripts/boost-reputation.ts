@@ -3,171 +3,113 @@
 /**
  * boost-reputation.ts
  *
- * Reputation script for the Web Scraper (402-gas) agent.
+ * Simple reputation flow:
+ * 1. Call POST /scrape with a URL and x-wallet-address (from private key).
+ * 2. Server returns { result..., feedbackAuth: { agentId, taskId, signature } }.
+ * 3. Submit feedback to the ERC-8004 Reputation Registry via giveFeedback().
+ *    (feedbackAuth is attached off-chain in feedbackURI/feedbackHash.)
  *
- * ── What it does ────────────────────────────────────────────────────────
+ * ERC-8004 has two registries: Identity (register, agent IDs) and Reputation
+ * (giveFeedback). giveFeedback lives on the Reputation Registry only.
  *
- *   1. Takes a transaction hash from a completed x402 payment to this agent.
- *   2. Fetches the tx receipt from Base to prove the payment happened.
- *   3. Builds a "Proof of Payment" JSON object.
- *   4. Uploads it to IPFS via Pinata and returns a CID.
- *   5. Calls the `postFeedback` function on an ERC-8004 Reputation
- *      Registry contract, submitting a 5-star verified review that
- *      references the IPFS proof.
- *
- * ── Usage ───────────────────────────────────────────────────────────────
- *
- *   BASE_RPC_URL=https://mainnet.base.org \
+ * Usage:
  *   REPUTATION_SIGNER_PRIVATE_KEY=0x... \
- *   REPUTATION_REGISTRY_ADDRESS=0x... \
- *   npx tsx scripts/boost-reputation.ts <txHash>
+ *   REPUTATION_REGISTRY_ADDRESS=0x... \   # Reputation Registry (not Identity)
+ *   AGENT_ID=1 \                          # Identity Registry token ID for your agent
+ *   npx tsx scripts/boost-reputation.ts <url-to-scrape>
  *
- * ── ERC-8004 Reputation Registry ABI (minimal) ─────────────────────────
- *
- *   function postFeedback(
- *     address agent,
- *     uint8   rating,        // 1-5 stars
- *     string  proofCID,      // IPFS CID pointing to proof JSON
- *     bytes   paymentProof   // abi-encoded tx hash
- *   ) external;
+ * Optional env:
+ *   BASE_URL          – scraper API base (default: http://localhost:8080)
+ *   BASE_RPC_URL      – chain RPC (default: https://mainnet.base.org)
  */
 
 import "dotenv/config";
 import { ethers } from "ethers";
-import crypto from "node:crypto";
 import axios from "axios";
 
-// ── Config ────────────────────────────────────────────────────────────
-
-const TX_HASH = process.argv[2];
-if (!TX_HASH) {
-  console.error("Usage: npx tsx scripts/boost-reputation.ts <txHash>");
+const URL_TO_SCRAPE = process.argv[2];
+if (!URL_TO_SCRAPE) {
+  console.error("Usage: npx tsx scripts/boost-reputation.ts <url-to-scrape>");
   process.exit(1);
 }
 
-const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 const SIGNER_KEY = process.env.REPUTATION_SIGNER_PRIVATE_KEY;
+// Reputation Registry (giveFeedback) – different from Identity Registry (register)
+// Base Mainnet: 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63
+// Base Sepolia: 0x8004B663056A597Dffe9eCcC1965A193B7388713
 const REGISTRY_ADDRESS = process.env.REPUTATION_REGISTRY_ADDRESS;
+const AGENT_ID = process.env.AGENT_ID; // Identity Registry token ID (uint256)
+const SCRAPER_BASE = process.env.BASE_URL || "http://localhost:8080";
+const RPC_URL = process.env.BASE_RPC_URL || "https://mainnet.base.org";
 
 if (!SIGNER_KEY || !REGISTRY_ADDRESS) {
   console.error(
-    "Missing REPUTATION_SIGNER_PRIVATE_KEY or REPUTATION_REGISTRY_ADDRESS",
+    "Set REPUTATION_SIGNER_PRIVATE_KEY and REPUTATION_REGISTRY_ADDRESS",
   );
   process.exit(1);
 }
+if (!AGENT_ID || Number.isNaN(Number(AGENT_ID))) {
+  console.error("Set AGENT_ID to your agent's Identity Registry token ID (uint256).");
+  process.exit(1);
+}
+const signerKey = SIGNER_KEY;
+const registryAddress = REGISTRY_ADDRESS;
+const agentIdToken = BigInt(AGENT_ID);
 
-const AGENT_ADDRESS =
-  process.env.PAYMENT_RECEIVER_ADDRESS || "0xYourWalletAddressHere";
-
-// Minimal ABI for the postFeedback function
-const REGISTRY_ABI = [
-  "function postFeedback(address agent, uint8 rating, string proofCID, bytes paymentProof) external",
+// Reputation Registry ABI (giveFeedback: value/valueDecimals + tags + optional URI/hash)
+const REPUTATION_ABI = [
+  "function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash) external",
 ];
 
-// ── Main ──────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
+  const wallet = new ethers.Wallet(signerKey);
   const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const signer = new ethers.Wallet(SIGNER_KEY!, provider);
+  const signer = wallet.connect(provider);
 
-  console.log(`\n  Fetching tx receipt for ${TX_HASH} ...`);
-  const receipt = await provider.getTransactionReceipt(TX_HASH);
-
-  if (!receipt) {
-    console.error("  Transaction not found or not yet confirmed.");
-    process.exit(1);
-  }
-
-  if (receipt.status !== 1) {
-    console.error("  Transaction reverted — cannot use a failed tx as proof.");
-    process.exit(1);
-  }
-
-  console.log(
-    `  ✓ Confirmed in block ${receipt.blockNumber}  (gas used: ${receipt.gasUsed})`,
+  console.log("Calling POST /scrape with x-wallet-address...");
+  const { data } = await axios.post(
+    `${SCRAPER_BASE.replace(/\/$/, "")}/scrape`,
+    { url: URL_TO_SCRAPE },
+    {
+      headers: { "x-wallet-address": wallet.address },
+      validateStatus: () => true,
+    },
   );
 
-  // ── Build Proof of Payment ────────────────────────────────────────
-
-  const proof = {
-    version: "1.0",
-    type: "x402-payment-proof",
-    agent: AGENT_ADDRESS,
-    txHash: TX_HASH,
-    chain: "eip155:8453",
-    blockNumber: receipt.blockNumber,
-    from: receipt.from,
-    to: receipt.to,
-    gasUsed: receipt.gasUsed.toString(),
-    timestamp: new Date().toISOString(),
-  };
-
-  console.log("\n  Proof of Payment:");
-  console.log(JSON.stringify(proof, null, 4));
-
-  // ── Upload proof to IPFS via Pinata ─────────────────────────────────
-
-  let proofCID: string;
-  const pinataJwt = process.env.PINATA_JWT;
-
-  if (pinataJwt) {
-    console.log("\n  Uploading proof to IPFS (Pinata) ...");
-    const { data } = await axios.post(
-      "https://api.pinata.cloud/pinning/pinJSONToIPFS",
-      {
-        pinataContent: proof,
-        pinataMetadata: { name: `x402-proof-${TX_HASH.slice(0, 10)}` },
-      },
-      { headers: { Authorization: `Bearer ${pinataJwt}` } },
-    );
-    proofCID = data.IpfsHash;
-    console.log(`  ✓ Pinned to IPFS: ${proofCID}`);
-  } else {
-    console.log(
-      "\n  ⚠ PINATA_JWT not set — using deterministic mock CID (set PINATA_JWT for real uploads)",
-    );
-    const proofBytes = Buffer.from(JSON.stringify(proof));
-    proofCID =
-      "bafkrei" +
-      crypto.createHash("sha256").update(proofBytes).digest("hex").slice(0, 52);
-    console.log(`  Mock IPFS CID: ${proofCID}`);
+  const feedbackAuth = data?.feedbackAuth;
+  if (!feedbackAuth?.agentId || !feedbackAuth?.taskId || !feedbackAuth?.signature) {
+    console.error("Response missing feedbackAuth (agentId, taskId, signature).", data?.error ? data.error : "Is AGENT_PRIVATE_KEY set on the server?");
+    process.exit(1);
   }
 
-  // ── Submit on-chain review ────────────────────────────────────────
+  // Attestation is stored off-chain; contract uses value + tags + optional feedbackURI/feedbackHash
+  const feedbackPayload = JSON.stringify(feedbackAuth);
+  const feedbackHash = ethers.keccak256(ethers.toUtf8Bytes(feedbackPayload));
+  const value = 100; // 100 = 5-star equivalent on 0–100 scale
+  const valueDecimals = 0;
 
   const registry = new ethers.Contract(
-    REGISTRY_ADDRESS!,
-    REGISTRY_ABI,
+    registryAddress,
+    REPUTATION_ABI,
     signer,
   );
 
-  const paymentProofBytes = ethers.AbiCoder.defaultAbiCoder().encode(
-    ["bytes32"],
-    [TX_HASH],
+  console.log("Submitting ERC-8004 feedback to Reputation Registry...");
+  const tx = await registry.giveFeedback(
+    agentIdToken,
+    value,
+    valueDecimals,
+    "web-scraper",
+    "scrape",
+    SCRAPER_BASE,
+    `data:application/json,${encodeURIComponent(feedbackPayload)}`,
+    feedbackHash,
   );
-
-  console.log("\n  Submitting 5-star review to Reputation Registry ...");
-
-  const tx = await registry.postFeedback(
-    AGENT_ADDRESS,
-    5,
-    proofCID,
-    paymentProofBytes,
-  );
-
-  console.log(`  Tx sent: ${tx.hash}`);
-  console.log("  Waiting for confirmation ...");
-
-  const reviewReceipt = await tx.wait();
-  if (!reviewReceipt) {
-    throw new Error("Review transaction receipt is null.");
-  }
-  console.log(
-    `  ✓ Review confirmed in block ${reviewReceipt.blockNumber}\n`,
-  );
+  await tx.wait();
+  console.log("✓ Reputation updated. Tx:", tx.hash);
 }
 
 main().catch((err: Error) => {
-  console.error("\n  Fatal error:", err.message);
+  console.error("Fatal error:", err.message);
   process.exit(1);
 });

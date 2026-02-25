@@ -10,6 +10,7 @@ node_modules/
 # ── Generated Artifacts ───────────────────────────────
 # Output of generate-agent-card.ts --upload / --register
 agent-card.json
+agent-card-cid.txt
 
 # ── TypeScript Build Output ──────────────────────────
 dist/

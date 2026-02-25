@@ -7,6 +7,7 @@
 
 import "dotenv/config";
 import express from "express";
+import { Wallet, id, getBytes, solidityPackedKeccak256 } from "ethers";
 import { paymentMiddleware } from "@x402/express";
 import { x402ResourceServer, HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
@@ -18,6 +19,11 @@ import { extractUrl } from "./services/simplescraper.js";
 
 const PORT = process.env.PORT || 8080;
 const RECEIVER = process.env.PAYMENT_RECEIVER_ADDRESS || "0xYourWalletAddressHere";
+
+// Agent wallet for ERC-8004 feedback auth (optional; when set, responses include feedbackAuth)
+const agentWallet = process.env.AGENT_PRIVATE_KEY
+  ? new Wallet(process.env.AGENT_PRIVATE_KEY)
+  : null;
 
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL || "https://x402.org/facilitator";
@@ -64,13 +70,14 @@ app.post("/scrape", freemiumGate(x402Middleware), async (req, res) => {
     url?: string;
     markdown?: boolean;
     html?: boolean;
+    clientAddress?: string;
   };
   const url = typeof body?.url === "string" ? body.url.trim() : undefined;
 
   if (!url) {
     res.status(400).json({
       error: "Missing required field: url",
-      optional: ["markdown", "html"],
+      optional: ["markdown", "html", "clientAddress"],
     });
     return;
   }
@@ -88,7 +95,29 @@ app.post("/scrape", freemiumGate(x402Middleware), async (req, res) => {
       return;
     }
 
-    res.json(result.data);
+    const payload: Record<string, unknown> = { ...result.data };
+
+    // ERC-8004 feedback auth: allow agents to submit feedback for this task
+    const clientAddress =
+      (typeof body?.clientAddress === "string" ? body.clientAddress.trim() : null) ||
+      (typeof req.headers["x-wallet-address"] === "string"
+        ? (req.headers["x-wallet-address"] as string).trim()
+        : null);
+    if (agentWallet && clientAddress) {
+      const taskId = id(url + Date.now());
+      const messageHash = solidityPackedKeccak256(
+        ["address", "address", "bytes32"],
+        [agentWallet.address, clientAddress, taskId]
+      );
+      const signature = await agentWallet.signMessage(getBytes(messageHash));
+      payload.feedbackAuth = {
+        agentId: agentWallet.address,
+        taskId,
+        signature,
+      };
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error("[scrape] unexpected error:", err);
     res.status(500).json({ error: "Internal server error during scrape." });
@@ -107,6 +136,7 @@ app.get("/", (_req, res) => {
         url: { required: true, type: "string", description: "URL to scrape" },
         markdown: { required: false, type: "boolean", description: "Include markdown of page content" },
         html: { required: false, type: "boolean", description: "Include raw HTML" },
+        clientAddress: { required: false, type: "string", description: "Client wallet for ERC-8004 feedback auth (else x-wallet-address header)" },
       },
       example: "POST /scrape with body: { \"url\": \"https://example.com\" }",
       payment: "x402 ($0.03 USDC per call after free tier)",
@@ -146,6 +176,7 @@ app.get("/.well-known/agent.json", (_req, res) => {
           url: { type: "string", required: true, description: "URL to scrape" },
           markdown: { type: "boolean", required: false, description: "Include markdown of page content" },
           html: { type: "boolean", required: false, description: "Include raw HTML" },
+          clientAddress: { type: "string", required: false, description: "Client wallet for ERC-8004 feedback auth (else x-wallet-address header)" },
         },
         payment: {
           protocol: "x402",

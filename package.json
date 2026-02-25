@@ -8,6 +8,11 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "dev": "tsx --watch src/server.ts",
+    "generate-card": "tsx scripts/generate-agent-card.ts",
+    "upload-card": "tsx scripts/generate-agent-card.ts --upload",
+    "register-agent": "tsx scripts/generate-agent-card.ts --register",
+    "upload-and-register": "npm run upload-card && npm run register-agent",
+    "boost-reputation": "tsx scripts/boost-reputation.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": ["x402", "web-scraper", "agent", "api", "micropayments", "base"],
