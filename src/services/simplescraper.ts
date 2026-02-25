@@ -19,7 +19,6 @@ export interface SimplescraperExtractOptions {
 }
 
 export interface SimplescraperExtractResult {
-  id: string;
   url: string;
   status: string;
   date_scraped: string;
@@ -31,7 +30,6 @@ export interface SimplescraperExtractResult {
   markdown?: string;
   html?: string;
   data?: unknown[];
-  screenshots?: Array<{ url: string; screenshot: string }>;
 }
 
 export interface SimplescraperError {
@@ -62,7 +60,7 @@ export async function extractUrl(
       `${BASE_URL}/extract`,
       {
         url,
-        markdown: options.markdown ?? false,
+        markdown: options.markdown ?? true,
         html: options.html ?? false,
         screenshot: false,
       },
