@@ -222,6 +222,33 @@ const agentCard = {
     paymentProtocol: "x402",
   },
 
+  // EIP-8004 / discovery-friendly fields (aligned with popular agent cards)
+  x402Support: true,
+  active: true,
+  supportedTrust: ["reputation", "crypto-economic", "tee-attestation"] as const,
+  updatedAt: Math.floor(Date.now() / 1000),
+  // ...(process.env.AGENT_ID && {
+  //   registrations: [
+  //     {
+  //       agentId: parseInt(process.env.AGENT_ID, 10),
+  //       agentRegistry: `eip155:8453:${IDENTITY_REGISTRY_ADDRESS}`,
+  //     },
+  //   ],
+  // }),
+  attributes: {
+    blockchain: { chain: "base", chainId: 8453 },
+    protocols: ["x402"],
+    tags: [
+      "web-scraping",
+      "content-extraction",
+      "markdown",
+      "html",
+      "base",
+      "x402",
+      "agent-api",
+    ],
+  },
+
   deployment: {
     runtime: "Node.js >= 20",
     port: 8080,
