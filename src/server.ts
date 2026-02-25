@@ -218,7 +218,7 @@ app.get("/.well-known/agent.json", (_req, res) => {
         },
       },
     ],
-    contact: { type: "url", value: "https://github.com/402-gas" },
+    contact: { type: "url", value: "https://www.fourotwo.xyz" },
   });
 });
 
