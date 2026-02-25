@@ -1,0 +1,36 @@
+# ── Dependencies ──────────────────────────────────────
+node_modules/
+
+# ── Environment & Secrets ─────────────────────────────
+# Never commit real credentials
+.env
+.env.local
+.env.*.local
+
+# ── Generated Artifacts ───────────────────────────────
+# Output of generate-agent-card.ts --upload / --register
+agent-card.json
+
+# ── TypeScript Build Output ──────────────────────────
+dist/
+
+# ── Logs ──────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ── Notes & Scratch ───────────────────────────────────
+TODO.md
+NOTES.md
+
+# ── Claude ────────────────────────────────────────────
+.claude/
+
+# ── OS & Editor ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Docker ────────────────────────────────────────────
+.dockerenv
