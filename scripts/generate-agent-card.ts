@@ -78,6 +78,8 @@ const agentCard = {
     "Simple paid API for agents: first 2 requests per wallet free, then $0.03 USDC per call via x402. " +
     "No API keys, no subscriptions.",
 
+  image: "https://i.ibb.co/kgBZz0Tb/Screenshot-2026-02-25-at-16-59-05.png", 
+
   tags: [
     "web-scraping",
     "content-extraction",
@@ -87,6 +89,8 @@ const agentCard = {
     "x402",
     "agent-api",
   ],
+
+  capabilities: ["web-scraping", "data-analysis", "automated-reporting"],
 
   protocols: ["x402", "oasf/1.0"],
   authSchemes: ["x402"],

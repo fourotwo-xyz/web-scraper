@@ -7,7 +7,7 @@
 
 import "dotenv/config";
 import express from "express";
-import { Wallet, id, getBytes, solidityPackedKeccak256 } from "ethers";
+import { Wallet, id, getBytes, AbiCoder, keccak256, hexlify } from "ethers";
 import { paymentMiddleware } from "@x402/express";
 import { x402ResourceServer, HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
@@ -24,6 +24,11 @@ const RECEIVER = process.env.PAYMENT_RECEIVER_ADDRESS || "0xYourWalletAddressHer
 const agentWallet = process.env.AGENT_PRIVATE_KEY
   ? new Wallet(process.env.AGENT_PRIVATE_KEY)
   : null;
+// CHAOSCHAIN Base Sepolia: Identity 0x8004AA63c570c570eBF15376c0dB199918BFe9Fb
+const IDENTITY_REGISTRY =
+  process.env.IDENTITY_REGISTRY_ADDRESS || "0x8004AA63c570c570eBF15376c0dB199918BFe9Fb";
+const CHAIN_ID = parseInt(process.env.CHAIN_ID || "84532", 10); // Base Sepolia
+const NUMERIC_AGENT_ID = process.env.AGENT_ID ? BigInt(process.env.AGENT_ID) : null;
 
 const FACILITATOR_URL =
   process.env.X402_FACILITATOR_URL || "https://x402.org/facilitator";
@@ -97,7 +102,7 @@ app.post("/scrape", freemiumGate(x402Middleware), async (req, res) => {
 
     const payload: Record<string, unknown> = { ...result.data };
 
-    // ERC-8004 feedback auth: allow agents to submit feedback for this task
+    // ERC-8004 feedback auth: allow clients to submit feedback on-chain (ReputationRegistry)
     const clientAddress =
       (typeof body?.clientAddress === "string" ? body.clientAddress.trim() : null) ||
       (typeof req.headers["x-wallet-address"] === "string"
@@ -105,15 +110,36 @@ app.post("/scrape", freemiumGate(x402Middleware), async (req, res) => {
         : null);
     if (agentWallet && clientAddress) {
       const taskId = id(url + Date.now());
-      const messageHash = solidityPackedKeccak256(
-        ["address", "address", "bytes32"],
-        [agentWallet.address, clientAddress, taskId]
-      );
-      const signature = await agentWallet.signMessage(getBytes(messageHash));
+
+      // Single signature: contract-format auth (289 bytes) for CHAOSCHAIN ReputationRegistry
+      if (NUMERIC_AGENT_ID !== null) {
+        const indexLimit = 1000n;
+        const expiry = BigInt(Math.floor(Date.now() / 1000) + 3600);
+        const abiCoder = AbiCoder.defaultAbiCoder();
+        const encodedStruct = abiCoder.encode(
+          ["uint256", "address", "uint64", "uint256", "uint256", "address", "address"],
+          [
+            NUMERIC_AGENT_ID,
+            clientAddress,
+            indexLimit,
+            expiry,
+            BigInt(CHAIN_ID),
+            IDENTITY_REGISTRY,
+            agentWallet.address,
+          ]
+        );
+        const structHash = keccak256(encodedStruct);
+        const contractSig = await agentWallet.signMessage(getBytes(structHash));
+        const authBytes = new Uint8Array(224 + 65);
+        authBytes.set(getBytes(encodedStruct), 0);
+        authBytes.set(getBytes(contractSig), 224);
+        payload.feedbackAuthContract = hexlify(authBytes);
+      }
+
+      // Lightweight metadata for feedbackUri payload (no second signature)
       payload.feedbackAuth = {
         agentId: agentWallet.address,
         taskId,
-        signature,
       };
     }
 
@@ -166,7 +192,11 @@ app.get("/.well-known/agent.json", (_req, res) => {
     name: "Web-Scraper",
     description:
       "Scrape a given URL and get metadata, optional markdown or HTML. Paid API for agents with x402; first 2 requests per wallet are free.",
-    capabilities: ["web-scraping", "content-extraction"],
+    capabilities: {
+      streaming: false,
+      pushNotifications: false,
+      stateTransitionHistory: false,
+    },
     endpoints: [
       {
         method: "POST",
